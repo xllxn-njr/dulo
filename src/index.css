@@ -2,15 +2,29 @@
 
 @layer base {
   :root {
-    --dulo-bg: #09090B;
-    --dulo-surface: #121215;
-    --dulo-hover: #1C1C21;
-    --dulo-border: #27272A;
+    --dulo-bg: #0A0A0C;
+    --dulo-surface: #141417;
+    --dulo-hover: #1C1C22;
+    --dulo-border: rgba(255, 255, 255, 0.08);
     --dulo-text: #FAFAFA;
-    --dulo-text-secondary: #A1A1AA;
-    --dulo-text-muted: #71717A;
+    --dulo-text-secondary: rgba(255, 255, 255, 0.62);
+    --dulo-text-muted: rgba(255, 255, 255, 0.44);
     --dulo-track: #3F3F46;
     --dulo-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  :root[data-dulo-theme="midnight"] {
+    --dulo-bg: #050507;
+    --dulo-surface: #0E0E11;
+    --dulo-hover: #17171C;
+    --dulo-border: rgba(255, 255, 255, 0.07);
+  }
+
+  :root[data-dulo-theme="graphite"] {
+    --dulo-bg: #0F0F13;
+    --dulo-surface: #18181D;
+    --dulo-hover: #222229;
+    --dulo-border: rgba(255, 255, 255, 0.1);
   }
 
   * {
@@ -20,8 +34,8 @@
 
   html,
   body {
-    background-color: #09090B;
-    color: #FAFAFA;
+    background-color: var(--dulo-bg);
+    color: var(--dulo-text);
     font-family: "DM Sans", system-ui, -apple-system, sans-serif;
     letter-spacing: 0.005em;
     overscroll-behavior-y: none;
@@ -43,6 +57,15 @@
 
 .spring-transition {
   transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* Custom minimalist matte scrollbar */
@@ -86,7 +109,7 @@ input[type="range"].dulo-range::-webkit-slider-thumb {
   border-radius: 9999px;
   background: #FAFAFA;
   margin-top: -4px;
-  transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 input[type="range"].dulo-range:hover::-webkit-slider-thumb {

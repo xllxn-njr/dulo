@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Disc3 } from 'lucide-react';
 
 interface TrackArtworkProps {
@@ -15,6 +15,10 @@ export const TrackArtwork: React.FC<TrackArtworkProps> = ({
   size = 'md',
 }) => {
   const [errored, setErrored] = useState(false);
+
+  useEffect(() => {
+    setErrored(false);
+  }, [src]);
 
   const iconSizes = {
     xs: 'w-4 h-4',

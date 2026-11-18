@@ -88,10 +88,10 @@ export const AccountButton: React.FC<AccountButtonProps> = ({
         )}
         <div className="min-w-0">
           <p className="text-xs font-medium text-[#FAFAFA] truncate">
-            {isGoogleUser ? user?.displayName || 'Google Account' : 'Sign In'}
+            {isGoogleUser ? user?.displayName || user?.email || 'Dulo Account' : 'Sign In'}
           </p>
           <p className="text-[10px] text-[#71717A] truncate">
-            {isGoogleUser ? 'Cloud Sync Active' : 'Anonymous Session'}
+            {isGoogleUser ? 'Cloud Sync Active' : 'Guest Session'}
           </p>
         </div>
       </div>

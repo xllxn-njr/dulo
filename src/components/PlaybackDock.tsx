@@ -50,7 +50,7 @@ export const PlaybackDock: React.FC = () => {
   return (
     <>
       {/* Desktop Persistent Bottom Playback Dock */}
-      <footer className="hidden md:flex fixed bottom-0 left-0 right-0 z-30 h-20 border-t border-[#27272A] bg-[#121215] px-5 items-center justify-between gap-6">
+      <footer className="hidden md:flex fixed bottom-0 left-0 right-0 z-30 h-20 border-t border-[var(--dulo-border)] bg-[var(--dulo-surface)]/95 backdrop-blur-xl px-5 items-center justify-between gap-6">
         {/* Left: Track Info & Expand Sheet Trigger */}
         <div className="flex items-center gap-3.5 min-w-0 w-[28%]">
           <button
@@ -156,7 +156,7 @@ export const PlaybackDock: React.FC = () => {
           </div>
 
           <div className="w-full flex items-center gap-2.5">
-            <span className="font-mono-tabular text-[11px] text-[#71717A] w-10 text-right">
+            <span className="font-mono-tabular tabular-nums text-[11px] text-[#71717A] w-10 text-right">
               {formatDuration(currentTime)}
             </span>
             <div className="relative flex-1 h-4 flex items-center">
@@ -177,7 +177,7 @@ export const PlaybackDock: React.FC = () => {
                 className="absolute inset-0 w-full opacity-0 cursor-pointer"
               />
             </div>
-            <span className="font-mono-tabular text-[11px] text-[#71717A] w-10">
+            <span className="font-mono-tabular tabular-nums text-[11px] text-[#71717A] w-10">
               {formatDuration(duration)}
             </span>
           </div>
@@ -251,9 +251,9 @@ export const PlaybackDock: React.FC = () => {
         </div>
       </footer>
 
-      {/* Mobile Floating Mini-Player Pill hovering above 3-tab bottom bar */}
-      <div className="md:hidden fixed bottom-[68px] left-3 right-3 z-30">
-        <div className="rounded-xl border border-[#27272A] bg-[#121215] overflow-hidden">
+      {/* Mobile Floating Mini-Player Pill hovering cleanly above Floating Lower Pill Dock */}
+      <div className="md:hidden fixed bottom-[92px] left-4 right-4 max-w-[430px] mx-auto z-30">
+        <div className="rounded-2xl border border-white/[0.08] bg-[#141417]/95 backdrop-blur-xl overflow-hidden shadow-[0_12px_32px_rgba(0,0,0,0.6)]">
           <div className="flex items-center gap-3 px-2.5 py-2">
             <button
               onClick={() => setNowPlayingOpen(true)}

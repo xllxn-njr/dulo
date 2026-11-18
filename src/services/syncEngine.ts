@@ -69,7 +69,8 @@ export async function ensureUserAccountDoc(user: User): Promise<void> {
 
 export function subscribeLikedSongs(
   uid: string,
-  onUpdate: (tracks: Track[]) => void
+  onUpdate: (tracks: Track[]) => void,
+  onError?: (err: unknown) => void
 ): () => void {
   const path = `users/${uid}/liked_songs`;
   const q = query(
@@ -102,7 +103,12 @@ export function subscribeLikedSongs(
       onUpdate(tracks);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.LIST, path);
+      try {
+        handleFirestoreError(error, OperationType.LIST, path);
+      } catch (wrapped) {
+        if (onError) onError(wrapped);
+        else console.error(wrapped);
+      }
     }
   );
 }
@@ -153,7 +159,8 @@ export async function syncUnlikeSong(uid: string, trackId: string): Promise<void
 
 export function subscribePlaylists(
   uid: string,
-  onUpdate: (playlists: UserPlaylist[]) => void
+  onUpdate: (playlists: UserPlaylist[]) => void,
+  onError?: (err: unknown) => void
 ): () => void {
   const path = `users/${uid}/playlists`;
   const q = query(
@@ -196,7 +203,12 @@ export function subscribePlaylists(
       onUpdate(playlists);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.LIST, path);
+      try {
+        handleFirestoreError(error, OperationType.LIST, path);
+      } catch (wrapped) {
+        if (onError) onError(wrapped);
+        else console.error(wrapped);
+      }
     }
   );
 }
@@ -250,7 +262,8 @@ export async function syncDeletePlaylist(
 
 export function subscribeHistory(
   uid: string,
-  onUpdate: (entries: ListeningHistoryEntry[]) => void
+  onUpdate: (entries: ListeningHistoryEntry[]) => void,
+  onError?: (err: unknown) => void
 ): () => void {
   const path = `users/${uid}/history`;
   const q = query(
@@ -285,7 +298,12 @@ export function subscribeHistory(
       onUpdate(entries);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.LIST, path);
+      try {
+        handleFirestoreError(error, OperationType.LIST, path);
+      } catch (wrapped) {
+        if (onError) onError(wrapped);
+        else console.error(wrapped);
+      }
     }
   );
 }

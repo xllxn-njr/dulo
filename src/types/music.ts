@@ -10,6 +10,8 @@ export type NavTab = 'home' | 'search' | 'library' | 'stats' | 'settings';
 
 export type EQPresetId = 'flat' | 'bass_boost' | 'vocal_clarity' | 'late_night' | 'studio' | 'custom';
 
+export type ThemeVariant = 'obsidian' | 'midnight' | 'graphite';
+
 export interface EQBand {
   frequency: number;
   label: string;
@@ -115,6 +117,7 @@ export interface SleepTimerState {
 }
 
 export interface AppSettings {
+  theme: ThemeVariant;
   streamMode: StreamMode;
   pipedInstances: string[];
   customProxyUrl: string;
@@ -125,3 +128,17 @@ export interface AppSettings {
   eqPreset: EQPresetId;
   eqGains: number[]; // 10 values
 }
+
+export interface TrendingArtist {
+  id: string;
+  name: string;
+  avatar: string;
+  genre: string;
+  tracks: Track[];
+}
+
+export type HomeSubRoute =
+  | { type: 'artist'; artist: TrendingArtist }
+  | { type: 'catalog'; title: string; subtitle?: string; tracks: Track[] }
+  | null;
+

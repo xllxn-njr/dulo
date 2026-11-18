@@ -9,9 +9,11 @@ import React, {
 } from 'react';
 import { audioEngine, EQ_PRESETS } from '../services/audioEngine';
 import {
-  signInAnonymousIfNeeded,
+  signInWithAppleModal,
+  signInWithEmailCredentials,
   signInWithGoogleModal,
   signOutAccount,
+  signUpWithEmailCredentials,
   subscribeAuth,
 } from '../services/firebase';
 import { fetchSyncedLyrics } from '../services/lyrics';
@@ -55,6 +57,7 @@ import { youtubePlayer } from '../services/youtubePlayer';
 import {
   AppSettings,
   EQPresetId,
+  HomeSubRoute,
   ListeningHistoryEntry,
   ListeningStats,
   LyricLine,
@@ -63,6 +66,7 @@ import {
   SleepTimerState,
   SponsorSegment,
   Track,
+  TrendingArtist,
   UserPlaylist,
 } from '../types/music';
 import { formatDuration } from '../utils/format';
@@ -72,6 +76,7 @@ const RECENT_SEARCHES_KEY = 'dulo_recent_searches_v1';
 const LIKED_SONGS_KEY = 'dulo_liked_songs_v1';
 
 const DEFAULT_SETTINGS: AppSettings = {
+  theme: 'obsidian',
   streamMode: 'proxy',
   pipedInstances: DEFAULT_PIPED_INSTANCES,
   customProxyUrl: DEFAULT_PROXY_URL,
@@ -113,6 +118,10 @@ function loadRecentSearches(): string[] {
 interface DuloContextValue {
   activeTab: NavTab;
   setActiveTab: (tab: NavTab) => void;
+  homeSubRoute: HomeSubRoute;
+  openArtistProfile: (artist: TrendingArtist) => void;
+  openCatalogView: (title: string, tracks: Track[], subtitle?: string) => void;
+  clearHomeSubRoute: () => void;
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (v: boolean) => void;
 
@@ -166,11 +175,17 @@ interface DuloContextValue {
   authModalOpen: boolean;
   setAuthModalOpen: (v: boolean) => void;
 
-  // Firebase Auth & Cloud Sync
+  // Firebase Auth & Cloud Sync + Onboarding
+  onboardingCompleted: boolean;
+  completeOnboarding: () => void;
+  reopenOnboarding: () => void;
   user: User | null;
   authLoading: boolean;
   authNotice: string | null;
   signInWithGoogle: () => Promise<void>;
+  signInWithApple: () => Promise<void>;
+  signInWithEmail: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   likedSongs: Track[];
   likedIds: Set<string>;
@@ -213,8 +228,28 @@ interface DuloContextValue {
 const DuloContext = createContext<DuloContextValue | null>(null);
 
 export const DuloProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [activeTab, setActiveTab] = useState<NavTab>('home');
+  const [activeTab, setActiveTabState] = useState<NavTab>('home');
+  const [homeSubRoute, setHomeSubRoute] = useState<HomeSubRoute>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  const setActiveTab = useCallback((tab: NavTab) => {
+    setActiveTabState(tab);
+    setHomeSubRoute(null);
+  }, []);
+
+  const openArtistProfile = useCallback((artist: TrendingArtist) => {
+    setActiveTabState('home');
+    setHomeSubRoute({ type: 'artist', artist });
+  }, []);
+
+  const openCatalogView = useCallback((title: string, tracks: Track[], subtitle?: string) => {
+    setActiveTabState('home');
+    setHomeSubRoute({ type: 'catalog', title, tracks, subtitle });
+  }, []);
+
+  const clearHomeSubRoute = useCallback(() => {
+    setHomeSubRoute(null);
+  }, []);
 
   const [settings, setSettings] = useState<AppSettings>(loadInitialSettings);
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
@@ -245,9 +280,11 @@ export const DuloProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
+  const [skippedLogin, setSkippedLogin] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
+  const onboardingCompleted = Boolean(user && !user.isAnonymous) || skippedLogin;
 
   const [likedSongs, setLikedSongs] = useState<Track[]>(() => {
     try {
@@ -288,7 +325,6 @@ export const DuloProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const lastStatTickRef = useRef<number>(0);
   const sleepFadeTriggeredRef = useRef(false);
   const toastTimerRef = useRef<number | null>(null);
-  const anonAttemptedRef = useRef(false);
   const userRef = useRef<User | null>(null);
   userRef.current = user;
 
@@ -336,17 +372,7 @@ export const DuloProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(authUser);
 
       if (!authUser) {
-        if (!anonAttemptedRef.current) {
-          anonAttemptedRef.current = true;
-          void signInAnonymousIfNeeded().then((res) => {
-            if (res.anonymousProviderDisabled && res.error) {
-              setAuthNotice(res.error);
-            }
-            setAuthLoading(false);
-          });
-        } else {
-          setAuthLoading(false);
-        }
+        setAuthLoading(false);
         return;
       }
 
@@ -356,32 +382,50 @@ export const DuloProvider: React.FC<{ children: React.ReactNode }> = ({ children
       void (async () => {
         try {
           await ensureUserAccountDoc(authUser);
-          unsubLiked = subscribeLikedSongs(authUser.uid, (remoteLiked) => {
-            setLikedSongs(remoteLiked);
-            localStorage.setItem(LIKED_SONGS_KEY, JSON.stringify(remoteLiked));
-          });
-          unsubPlaylists = subscribePlaylists(authUser.uid, (remotePlaylists) => {
-            setPlaylists((prev) => {
-              const map = new Map<string, UserPlaylist>();
-              remotePlaylists.forEach((p) => map.set(p.id, p));
-              prev.forEach((p) => {
-                if (!map.has(p.id)) map.set(p.id, p);
+          const onSyncErr = (err: unknown) => {
+            const msg = err instanceof Error ? err.message : 'Cloud sync unavailable';
+            if (msg.includes('Missing or insufficient permissions')) {
+              setAuthNotice('Firestore rules need deployment for cloud sync. Playing in local mode.');
+            }
+          };
+          unsubLiked = subscribeLikedSongs(
+            authUser.uid,
+            (remoteLiked) => {
+              setLikedSongs(remoteLiked);
+              localStorage.setItem(LIKED_SONGS_KEY, JSON.stringify(remoteLiked));
+            },
+            onSyncErr
+          );
+          unsubPlaylists = subscribePlaylists(
+            authUser.uid,
+            (remotePlaylists) => {
+              setPlaylists((prev) => {
+                const map = new Map<string, UserPlaylist>();
+                remotePlaylists.forEach((p) => map.set(p.id, p));
+                prev.forEach((p) => {
+                  if (!map.has(p.id)) map.set(p.id, p);
+                });
+                return Array.from(map.values()).sort((a, b) => b.createdAt - a.createdAt);
               });
-              return Array.from(map.values()).sort((a, b) => b.createdAt - a.createdAt);
-            });
-          });
-          unsubHistory = subscribeHistory(authUser.uid, (remoteHistory) => {
-            setHistory((prev) => {
-              const map = new Map<string, ListeningHistoryEntry>();
-              remoteHistory.forEach((h) => map.set(h.track.id, h));
-              prev.forEach((h) => {
-                if (!map.has(h.track.id)) map.set(h.track.id, h);
+            },
+            onSyncErr
+          );
+          unsubHistory = subscribeHistory(
+            authUser.uid,
+            (remoteHistory) => {
+              setHistory((prev) => {
+                const map = new Map<string, ListeningHistoryEntry>();
+                remoteHistory.forEach((h) => map.set(h.track.id, h));
+                prev.forEach((h) => {
+                  if (!map.has(h.track.id)) map.set(h.track.id, h);
+                });
+                return Array.from(map.values())
+                  .sort((a, b) => b.playedAt - a.playedAt)
+                  .slice(0, 24);
               });
-              return Array.from(map.values())
-                .sort((a, b) => b.playedAt - a.playedAt)
-                .slice(0, 24);
-            });
-          });
+            },
+            onSyncErr
+          );
         } catch (err) {
           console.error('Sync initialization warning:', err);
         }
@@ -394,11 +438,16 @@ export const DuloProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  // Sync audioEngine parameters with settings
+  // Sync audioEngine parameters & document matte theme variant
   useEffect(() => {
     audioEngine.setCrossfadeSeconds(settings.crossfadeSeconds);
     audioEngine.setEqGains(settings.eqGains);
     audioEngine.setLoudnessNormalization(settings.loudnessNormalization);
+    if (settings.theme === 'obsidian') {
+      delete document.documentElement.dataset.duloTheme;
+    } else {
+      document.documentElement.dataset.duloTheme = settings.theme;
+    }
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
   }, [settings]);
 
@@ -1095,14 +1144,51 @@ export const DuloProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [likedSongs, showToast]
   );
 
+  const completeOnboarding = useCallback(() => {
+    setSkippedLogin(true);
+  }, []);
+
+  const reopenOnboarding = useCallback(() => {
+    setSkippedLogin(false);
+  }, []);
+
   const signInWithGoogle = useCallback(async () => {
     const signedUser = await signInWithGoogleModal();
     setUser(signedUser);
+    completeOnboarding();
     showToast(`Signed in as ${signedUser.displayName || signedUser.email || 'Google User'}`);
-  }, [showToast]);
+  }, [completeOnboarding, showToast]);
+
+  const signInWithApple = useCallback(async () => {
+    const signedUser = await signInWithAppleModal();
+    setUser(signedUser);
+    completeOnboarding();
+    showToast(`Signed in as ${signedUser.displayName || signedUser.email || 'Apple User'}`);
+  }, [completeOnboarding, showToast]);
+
+  const signInWithEmail = useCallback(
+    async (email: string, password: string) => {
+      const signedUser = await signInWithEmailCredentials(email, password);
+      setUser(signedUser);
+      completeOnboarding();
+      showToast(`Signed in as ${signedUser.email || 'Dulo Member'}`);
+    },
+    [completeOnboarding, showToast]
+  );
+
+  const signUpWithEmail = useCallback(
+    async (email: string, password: string) => {
+      const signedUser = await signUpWithEmailCredentials(email, password);
+      setUser(signedUser);
+      completeOnboarding();
+      showToast(`Welcome to Dulo, ${signedUser.email || 'Member'}`);
+    },
+    [completeOnboarding, showToast]
+  );
 
   const signOut = useCallback(async () => {
     await signOutAccount();
+    setSkippedLogin(false);
     setLikedSongs([]);
     localStorage.removeItem(LIKED_SONGS_KEY);
     showToast('Signed out');
@@ -1168,6 +1254,10 @@ export const DuloProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         activeTab,
         setActiveTab,
+        homeSubRoute,
+        openArtistProfile,
+        openCatalogView,
+        clearHomeSubRoute,
         sidebarCollapsed,
         setSidebarCollapsed,
         currentTrack,
@@ -1213,10 +1303,16 @@ export const DuloProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCommandPaletteOpen,
         authModalOpen,
         setAuthModalOpen,
+        onboardingCompleted,
+        completeOnboarding,
+        reopenOnboarding,
         user,
         authLoading,
         authNotice,
         signInWithGoogle,
+        signInWithApple,
+        signInWithEmail,
+        signUpWithEmail,
         signOut,
         likedSongs,
         likedIds,

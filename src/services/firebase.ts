@@ -1,13 +1,14 @@
-import { Analytics, getAnalytics, isSupported } from 'firebase/analytics';
 import { FirebaseApp, getApps, initializeApp } from 'firebase/app';
 import {
   Auth,
   GoogleAuthProvider,
+  OAuthProvider,
   User,
+  createUserWithEmailAndPassword,
   getAuth,
-  linkWithPopup,
   onAuthStateChanged,
-  signInAnonymously,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
 } from 'firebase/auth';
@@ -17,44 +18,22 @@ import {
   getDocFromServer,
   getFirestore,
 } from 'firebase/firestore';
-
-const env = import.meta.env;
-
-const firebaseConfig = {
-  apiKey: env.VITE_FIREBASE_API_KEY || 'AIzaSyCAMGKvA8zCgU3N3uigXYjVE7JvGBSVjRY',
-  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || 'dulo-app.firebaseapp.com',
-  projectId: env.VITE_FIREBASE_PROJECT_ID || 'dulo-app',
-  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || 'dulo-app.firebasestorage.app',
-  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || '512998076321',
-  appId: env.VITE_FIREBASE_APP_ID || '1:512998076321:web:ba638b4f04784e272825e0',
-  measurementId: env.VITE_FIREBASE_MEASUREMENT_ID || 'G-B9QJVQLL2V',
-};
-
-const firestoreDatabaseId = env.VITE_FIREBASE_FIRESTORE_DATABASE_ID;
+import firebaseConfig from '../../firebase-applet-config.json';
 
 export const firebaseApp: FirebaseApp =
   getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
 
 export const auth: Auth = getAuth(firebaseApp);
-export const db: Firestore = firestoreDatabaseId
-  ? getFirestore(firebaseApp, firestoreDatabaseId)
+export const db: Firestore = firebaseConfig.firestoreDatabaseId
+  ? getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId)
   : getFirestore(firebaseApp);
-
-export let analytics: Analytics | null = null;
-if (typeof window !== 'undefined') {
-  void isSupported()
-    .then((supported) => {
-      if (supported) {
-        analytics = getAnalytics(firebaseApp);
-      }
-    })
-    .catch(() => {
-      // Ignore analytics initialization errors in restricted environments
-    });
-}
 
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+const appleProvider = new OAuthProvider('apple.com');
+appleProvider.addScope('email');
+appleProvider.addScope('name');
 
 export enum OperationType {
   CREATE = 'create',
@@ -123,58 +102,68 @@ export function subscribeAuth(callback: (user: User | null) => void): () => void
   return onAuthStateChanged(auth, callback);
 }
 
-export async function signInAnonymousIfNeeded(): Promise<{
-  user: User | null;
-  anonymousProviderDisabled?: boolean;
-  error?: string;
-}> {
-  if (auth.currentUser) {
-    return { user: auth.currentUser };
-  }
-  try {
-    const cred = await signInAnonymously(auth);
-    return { user: cred.user };
-  } catch (err) {
-    const code = (err as { code?: string })?.code || '';
-    if (
-      code === 'auth/operation-not-allowed' ||
-      code === 'auth/admin-restricted-operation'
-    ) {
-      return {
-        user: null,
-        anonymousProviderDisabled: true,
-        error:
-          'Anonymous sign-in is disabled in Firebase Console. Sign in with Google to enable cloud sync.',
-      };
-    }
-    return {
-      user: null,
-      error: err instanceof Error ? err.message : 'Anonymous sign-in unavailable',
-    };
-  }
+export async function signInWithGoogleModal(): Promise<User> {
+  const res = await signInWithPopup(auth, googleProvider);
+  return res.user;
 }
 
-export async function signInWithGoogleModal(): Promise<User> {
-  if (auth.currentUser && auth.currentUser.isAnonymous) {
-    try {
-      const linked = await linkWithPopup(auth.currentUser, googleProvider);
-      return linked.user;
-    } catch (err) {
-      const code = (err as { code?: string })?.code || '';
-      if (
-        code === 'auth/credential-already-in-use' ||
-        code === 'auth/email-already-in-use'
-      ) {
-        const res = await signInWithPopup(auth, googleProvider);
-        return res.user;
-      }
-      throw err;
-    }
-  }
-  const res = await signInWithPopup(auth, googleProvider);
+export async function signInWithAppleModal(): Promise<User> {
+  const res = await signInWithPopup(auth, appleProvider);
+  return res.user;
+}
+
+export async function signInWithEmailCredentials(
+  email: string,
+  password: string
+): Promise<User> {
+  const res = await signInWithEmailAndPassword(auth, email.trim(), password);
+  return res.user;
+}
+
+export async function signUpWithEmailCredentials(
+  email: string,
+  password: string
+): Promise<User> {
+  const res = await createUserWithEmailAndPassword(auth, email.trim(), password);
   return res.user;
 }
 
 export async function signOutAccount(): Promise<void> {
   await signOut(auth);
+}
+
+export async function sendPasswordReset(email: string): Promise<void> {
+  await sendPasswordResetEmail(auth, email.trim());
+}
+
+export function formatFirebaseAuthError(err: unknown): string {
+  const code = (err as { code?: string })?.code || '';
+  switch (code) {
+    case 'auth/popup-closed-by-user':
+      return 'Sign-in window was closed before completing.';
+    case 'auth/cancelled-popup-request':
+      return 'Sign-in request was cancelled. Please try again.';
+    case 'auth/popup-blocked':
+      return 'Pop-up was blocked by your browser. Please allow pop-ups for this site and try again.';
+    case 'auth/unauthorized-domain':
+      return `Domain (${typeof window !== 'undefined' ? window.location.hostname : 'preview'}) is not authorized in Firebase Authentication settings.`;
+    case 'auth/operation-not-allowed':
+      return 'This sign-in provider is not enabled yet in Firebase Console → Authentication → Sign-in method. Please enable it there or use Google Sign-In.';
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found':
+      return 'Incorrect email or password. Please check your credentials and try again.';
+    case 'auth/email-already-in-use':
+      return 'An account with this email already exists. Try signing in instead.';
+    case 'auth/weak-password':
+      return 'Password must be at least 6 characters.';
+    case 'auth/invalid-email':
+      return 'Please enter a valid email address.';
+    case 'auth/account-exists-with-different-credential':
+      return 'An account already exists with this email using a different sign-in provider.';
+    case 'auth/network-request-failed':
+      return 'Network error while contacting Firebase Authentication.';
+    default:
+      return err instanceof Error ? err.message : 'Unable to authenticate right now.';
+  }
 }
