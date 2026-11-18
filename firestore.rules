@@ -1,0 +1,168 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isValidSource(source) {
+      return source is string && source in ['demo', 'piped', 'proxy', 'local'];
+    }
+
+    function isValidUserAccount(data, uid) {
+      return data.keys().hasAll(['uid', 'isAnonymous', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'isAnonymous', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.uid == uid
+        && data.isAnonymous is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidLikedSong(data, uid) {
+      return data.keys().hasAll(['uid', 'id', 'videoId', 'title', 'artist', 'duration', 'source', 'likedAt'])
+        && data.keys().hasOnly(['uid', 'id', 'videoId', 'title', 'artist', 'album', 'duration', 'artwork', 'source', 'likedAt'])
+        && isValidId(data.uid)
+        && data.uid == uid
+        && data.id is string && data.id.size() >= 1 && data.id.size() <= 128
+        && data.videoId is string && data.videoId.size() >= 1 && data.videoId.size() <= 128
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 240
+        && data.artist is string && data.artist.size() >= 1 && data.artist.size() <= 200
+        && (!('album' in data) || (data.album is string && data.album.size() <= 200))
+        && (!('artwork' in data) || (data.artwork is string && data.artwork.size() <= 1000))
+        && data.duration is number && data.duration >= 0 && data.duration <= 86400
+        && isValidSource(data.source)
+        && data.likedAt is timestamp;
+    }
+
+    function isValidPlaylist(data, uid) {
+      return data.keys().hasAll(['uid', 'id', 'name', 'tracks', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'id', 'name', 'artwork', 'sourceUrl', 'tracks', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.uid == uid
+        && data.id is string && data.id.size() >= 1 && data.id.size() <= 128
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 160
+        && (!('artwork' in data) || (data.artwork is string && data.artwork.size() <= 1000))
+        && (!('sourceUrl' in data) || (data.sourceUrl is string && data.sourceUrl.size() <= 1000))
+        && data.tracks is list && data.tracks.size() <= 200
+        && (data.tracks.size() == 0 || data.tracks[0] is map)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidHistoryEntry(data, uid) {
+      return data.keys().hasAll(['uid', 'id', 'videoId', 'title', 'artist', 'duration', 'source', 'playCount', 'playedAt'])
+        && data.keys().hasOnly(['uid', 'id', 'videoId', 'title', 'artist', 'album', 'duration', 'artwork', 'source', 'playCount', 'playedAt'])
+        && isValidId(data.uid)
+        && data.uid == uid
+        && data.id is string && data.id.size() >= 1 && data.id.size() <= 128
+        && data.videoId is string && data.videoId.size() >= 1 && data.videoId.size() <= 128
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 240
+        && data.artist is string && data.artist.size() >= 1 && data.artist.size() <= 200
+        && (!('album' in data) || (data.album is string && data.album.size() <= 200))
+        && (!('artwork' in data) || (data.artwork is string && data.artwork.size() <= 1000))
+        && data.duration is number && data.duration >= 0 && data.duration <= 86400
+        && isValidSource(data.source)
+        && data.playCount is number && data.playCount >= 1 && data.playCount <= 1000000
+        && data.playedAt is timestamp;
+    }
+
+    match /users/{uid} {
+      allow get: if isValidId(uid) && isOwner(uid);
+      allow list: if false;
+      allow create: if isValidId(uid)
+        && isOwner(uid)
+        && isValidUserAccount(incoming(), uid)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(uid)
+        && isOwner(uid)
+        && isValidUserAccount(incoming(), uid)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['isAnonymous', 'updatedAt']);
+      allow delete: if isValidId(uid) && isOwner(uid);
+
+      match /liked_songs/{trackId} {
+        allow get: if isValidId(uid) && isValidId(trackId) && isOwner(uid);
+        allow list: if isValidId(uid) && isOwner(uid) && existing().uid == request.auth.uid;
+        allow create: if isValidId(uid)
+          && isValidId(trackId)
+          && isOwner(uid)
+          && isValidLikedSong(incoming(), uid)
+          && incoming().likedAt == request.time;
+        allow update: if isValidId(uid)
+          && isValidId(trackId)
+          && isOwner(uid)
+          && isValidLikedSong(incoming(), uid)
+          && incoming().uid == existing().uid
+          && incoming().id == existing().id
+          && incoming().likedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'artist', 'album', 'artwork', 'duration', 'source', 'likedAt']);
+        allow delete: if isValidId(uid) && isValidId(trackId) && isOwner(uid);
+      }
+
+      match /playlists/{playlistId} {
+        allow get: if isValidId(uid) && isValidId(playlistId) && isOwner(uid);
+        allow list: if isValidId(uid) && isOwner(uid) && existing().uid == request.auth.uid;
+        allow create: if isValidId(uid)
+          && isValidId(playlistId)
+          && isOwner(uid)
+          && isValidPlaylist(incoming(), uid)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(uid)
+          && isValidId(playlistId)
+          && isOwner(uid)
+          && isValidPlaylist(incoming(), uid)
+          && incoming().uid == existing().uid
+          && incoming().id == existing().id
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'artwork', 'sourceUrl', 'tracks', 'updatedAt']);
+        allow delete: if isValidId(uid) && isValidId(playlistId) && isOwner(uid);
+      }
+
+      match /history/{historyId} {
+        allow get: if isValidId(uid) && isValidId(historyId) && isOwner(uid);
+        allow list: if isValidId(uid) && isOwner(uid) && existing().uid == request.auth.uid;
+        allow create: if isValidId(uid)
+          && isValidId(historyId)
+          && isOwner(uid)
+          && isValidHistoryEntry(incoming(), uid)
+          && incoming().playedAt == request.time;
+        allow update: if isValidId(uid)
+          && isValidId(historyId)
+          && isOwner(uid)
+          && isValidHistoryEntry(incoming(), uid)
+          && incoming().uid == existing().uid
+          && incoming().id == existing().id
+          && incoming().playedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'artist', 'album', 'artwork', 'duration', 'source', 'playCount', 'playedAt']);
+        allow delete: if isValidId(uid) && isValidId(historyId) && isOwner(uid);
+      }
+    }
+  }
+}

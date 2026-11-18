@@ -1,0 +1,6 @@
+{
+  "name": "Dulo",
+  "description": "An open-source, matte dark-mode Progressive Web App music streaming platform with YouTube Music InnerTube/Piped playback, LRCLIB synced lyrics, SponsorBlock auto-skip, 10-band Web Audio EQ, and IndexedDB offline vault.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
